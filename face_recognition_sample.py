@@ -303,8 +303,16 @@ LEVELS = [
 # そのレベルになった瞬間に鳴らす音声 (キーは 0 始まり: 0 = Level1, 3 = Level4)
 LEVEL_SOUNDS = {
     0: BASE_DIR / "起きてください.mp4",
+    1: BASE_DIR / "LEVEL2こちょこちょ.mp4",
+    2: BASE_DIR / "LEVEL3つんつん.mp4",
     3: BASE_DIR / "起きろ大石.mp4",
+    4: BASE_DIR / "LEVEL5つねります.mp4",
+    5: BASE_DIR / "LEVEL6つねりこちょこちょ.mp4",
 }
+
+# 起きたときに鳴らす音声。WAKE_MIN_LEVEL (0 始まり: 2 = Level3) 以上まで進んでいたときだけ
+WAKE_SOUND = BASE_DIR / "おはようございます.mp4"
+WAKE_MIN_LEVEL = 2
 
 # Windows 標準の MediaPlayer で再生する (追加ライブラリ不要)。mp4 の音声だけを鳴らす
 _PLAY_SCRIPT = (
@@ -564,10 +572,18 @@ class App:
                                                 36 * self.s), smooth=True,
                                  fill=C_GREEN, outline="", tags="progress")
 
-        # 対象のレベルに上がった瞬間に音声を鳴らす (再生中は重ねない)
-        if level != self.prev_level and level in LEVEL_SOUNDS and (
-                self.player is None or self.player.poll() is not None):
+        # 対象のレベルに上がった瞬間に音声を鳴らす
+        # (前の音声がまだ鳴っていれば止めて、新しいレベルの音声を優先する)
+        if level != self.prev_level and level in LEVEL_SOUNDS:
+            if self.player is not None and self.player.poll() is None:
+                self.player.terminate()
             self.player = play_sound(LEVEL_SOUNDS[level])
+        # Level3 以上まで進んでから起きたら「おはようございます」を鳴らす
+        # (まだ警告音が鳴っていれば止めて、こちらを優先する)
+        if level == -1 and self.prev_level >= WAKE_MIN_LEVEL:
+            if self.player is not None and self.player.poll() is None:
+                self.player.terminate()
+            self.player = play_sound(WAKE_SOUND)
         self.prev_level = level
 
         # 帯の中に文字が収まるようにする
