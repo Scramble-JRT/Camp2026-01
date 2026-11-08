@@ -51,7 +51,7 @@ MODELS = {
 
 COSINE_THRESHOLD = 0.363  # これ以上なら同一人物とみなす (SFace の推奨値)
 TILT_THRESHOLD = 20       # 顔の傾きがこの角度(度)を超えたら「倒れている」
-EYE_CLOSED_THRESHOLD = 50 # 目のつぶり度合いがこの値(%)以上なら「閉じている」
+EYE_CLOSED_THRESHOLD = 40 # 目のつぶり度合いがこの値(%)以上なら「閉じている」(小さいほど閉じ判定が広い)
 
 
 # 検出時に試す画像の向き: 回転なし / 時計回りに90度 / 反時計回りに90度 (横向きの顔用)
@@ -614,9 +614,111 @@ class App:
         self.root.destroy()
 
 
+class Splash:
+    """起動画面: UI1 (タイトル + PRESS ENTER) → UI2 (ローディング) → メイン画面 (UI3)"""
+
+    DW, DH = 1920, 1080
+    LOADING_MS = 3000      # ローディング画面を出す時間
+    SPIN_MS = 110          # スピナーが1コマ回る間隔
+    TITLE_CENTER = (970, 261)  # タイトル画像を置く中心 (title_big.png は UI1.png の切り出し)
+    SPIN_CENTER, SPIN_RADIUS, DOT_RADIUS = (933, 679), 98, 22
+    # 時計回りに進む8個の点。先頭ほど濃く、後ろに行くほど薄くする
+    SPIN_SHADES = ["#333333", "#4d4d4d", "#666666", "#7d7d7d", "#929292", "#a8a8a8",
+                   "#d0d0d0", "#f2f2f2"]
+
+    def __init__(self, root, on_done):
+        self.root, self.on_done = root, on_done
+        self.phase = "title"  # title -> loading -> done
+        self.s, self.ox, self.oy = 1.0, 0.0, 0.0
+        self.spin_pos = 0
+        self.after_ids = []
+        img = BASE_DIR / "title_big.png"
+        self.title_img = cv2.imread(str(img)) if img.exists() else None
+
+        self.canvas = tk.Canvas(root, bg="white", highlightthickness=0)
+        self.canvas.pack(fill="both", expand=True)
+        self.canvas.bind("<Configure>", self.on_resize)
+        root.bind("<Return>", self.on_enter)
+        root.bind("<KP_Enter>", self.on_enter)
+        root.bind("<Escape>", lambda e: root.attributes("-fullscreen", False))
+        root.bind("<F11>", lambda e: root.attributes(
+            "-fullscreen", not root.attributes("-fullscreen")))
+
+    def sx(self, x):
+        return self.ox + x * self.s
+
+    def sy(self, y):
+        return self.oy + y * self.s
+
+    def on_resize(self, event):
+        s = min(event.width / self.DW, event.height / self.DH)
+        self.s = s
+        self.ox, self.oy = (event.width - self.DW * s) / 2, (event.height - self.DH * s) / 2
+        self.draw()
+
+    def draw(self):
+        c = self.canvas
+        c.delete("all")
+        cx, cy = self.TITLE_CENTER
+        if self.title_img is not None:
+            h, w = self.title_img.shape[:2]
+            self.photo = to_photo(fit_image(self.title_img, w * self.s, h * self.s))
+            c.create_image(self.sx(cx), self.sy(cy), image=self.photo)
+        else:
+            c.create_text(self.sx(cx), self.sy(cy), text="起きろ!!\n大石!!", fill="black",
+                          font=tkfont.Font(family=FONT, size=-round(200 * self.s), weight="bold"))
+
+        if self.phase == "title":
+            c.create_text(self.sx(960), self.sy(601), text="[PRESS ENTER]", fill="black",
+                          font=tkfont.Font(family=FONT, size=-round(54 * self.s), weight="bold"))
+        else:
+            self.draw_dots()
+
+    def draw_dots(self):
+        """スピナーの点だけを描き直す (タイトル画像の作り直しは重いので避ける)"""
+        c = self.canvas
+        c.delete("dots")
+        sx0, sy0 = self.SPIN_CENTER
+        for i in range(8):
+            angle = math.radians(i * 45)  # i = 0 が真上で、時計回り
+            x = sx0 + self.SPIN_RADIUS * math.sin(angle)
+            y = sy0 - self.SPIN_RADIUS * math.cos(angle)
+            r = self.DOT_RADIUS
+            shade = self.SPIN_SHADES[(self.spin_pos - i) % 8]
+            c.create_oval(self.sx(x - r), self.sy(y - r), self.sx(x + r), self.sy(y + r),
+                          fill=shade, outline="", tags="dots")
+
+    def on_enter(self, event=None):
+        if self.phase != "title":
+            return
+        self.phase = "loading"
+        self.draw()
+        self.after_ids.append(self.root.after(self.SPIN_MS, self.spin))
+        self.after_ids.append(self.root.after(self.LOADING_MS, self.finish))
+
+    def spin(self):
+        if self.phase != "loading":
+            return
+        self.spin_pos = (self.spin_pos + 1) % 8
+        self.draw_dots()
+        self.after_ids.append(self.root.after(self.SPIN_MS, self.spin))
+
+    def finish(self):
+        self.phase = "done"
+        for i in self.after_ids:
+            self.root.after_cancel(i)
+        for key in ("<Return>", "<KP_Enter>", "<Escape>", "<F11>"):
+            self.root.unbind(key)
+        self.canvas.destroy()
+        self.on_done()
+
+
 if __name__ == "__main__":
     fr = FaceRecognizer()
     fr.register_folder(KNOWN_DIR)
     root = tk.Tk()
-    App(root, fr)
+    root.title("Face Recognition")
+    root.attributes("-fullscreen", True)
+    root.protocol("WM_DELETE_WINDOW", root.destroy)
+    Splash(root, lambda: App(root, fr))
     root.mainloop()
