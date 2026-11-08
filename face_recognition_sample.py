@@ -11,8 +11,6 @@ Python 顔認識サンプル
     python face_recognition_sample.py
     → Tkinter の画面にカメラ映像・睡眠時間・警告レベル・状態が出ます
     → 目を閉じ続けると「睡眠」とみなし、10秒ごとに警告レベルが上がります
-    → 名前(英数字)を入力して「顔を登録」で、顔が1つ映っているときに登録
-       (known_faces/名前.jpg として保存されます)
 
 初回実行時に学習済みモデル (ONNX) を自動ダウンロードします。
 """
@@ -25,7 +23,7 @@ import time
 import tkinter as tk
 import urllib.request
 from pathlib import Path
-from tkinter import font as tkfont, messagebox, ttk
+from tkinter import font as tkfont, ttk
 
 import cv2
 import numpy as np
@@ -492,11 +490,7 @@ class App:
     def build_controls(self):
         bar = ttk.Frame(self.root, padding=6)
         bar.pack(side="bottom", fill="x")
-        ttk.Label(bar, text="名前(英数字):").pack(side="left")
-        self.name_var = tk.StringVar()
-        ttk.Entry(bar, textvariable=self.name_var, width=14).pack(side="left", padx=4)
-        ttk.Button(bar, text="顔を登録", command=self.register).pack(side="left")
-        self.status = tk.StringVar(value=f"登録済み: {', '.join(self.fr.known) or 'なし'}")
+        self.status = tk.StringVar()
         ttk.Label(bar, textvariable=self.status).pack(side="left", padx=12)
         ttk.Button(bar, text="終了", command=self.quit).pack(side="right")
         ttk.Button(bar, text="全画面 (F11)", command=self.toggle_fullscreen).pack(side="right", padx=4)
@@ -585,23 +579,6 @@ class App:
             c.itemconfigure(item, fill=C_RED if i == level else C_GREY_TEXT)
 
     # --- ボタン -------------------------------------------------------------
-    def register(self):
-        name = self.name_var.get().strip()
-        if not name.isascii() or not name.isalnum():
-            messagebox.showwarning("登録", "名前は英数字で入力してください")
-            return
-        if self.raw is None:
-            return
-        faces = self.fr.detect(self.raw)
-        if len(faces) != 1:
-            messagebox.showwarning("登録", "顔が1つだけ映るようにしてください")
-            return
-        KNOWN_DIR.mkdir(exist_ok=True)
-        path = KNOWN_DIR / f"{name}.jpg"
-        cv2.imwrite(str(path), self.raw)  # 枠なしの元画像を保存
-        self.fr.known[name] = self.fr.feature(self.raw, faces[0])
-        self.status.set(f"登録しました: {name}  (登録済み: {', '.join(self.fr.known)})")
-
     def save(self):
         if self.result is None:
             return
